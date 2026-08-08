@@ -14,7 +14,8 @@ import (
 type Vars map[string]string
 
 // Load parses and validates a project.yaml document, resolving "$TOKEN"
-// placeholders in all string values using vars.
+// placeholders in updater string values using vars (the config section keeps
+// literals).
 //
 // Every problem found is reported: the returned error message lists all of
 // them, one per line.
@@ -33,8 +34,13 @@ func Load(data []byte, vars Vars) (*Spec, error) {
 	if err := yaml.Unmarshal(data, &spec); err != nil {
 		return nil, fmt.Errorf("project spec: invalid YAML: %w", err)
 	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil, fmt.Errorf("project spec: invalid YAML: %w", err)
+	}
 
 	v := &validator{vars: vars}
+	spec.Config = v.loadConfig(&doc)
 	v.validate(&spec)
 	if err := v.err(); err != nil {
 		return nil, err

@@ -1,6 +1,6 @@
-// Package projectspec loads declarative project data (updaters, and later
-// config schema) from an embedded YAML file, validates it, and resolves
-// runtime placeholders.
+// Package projectspec loads declarative project data (updaters and config
+// schema) from an embedded YAML file, validates it, and resolves runtime
+// placeholders.
 //
 // The spec file is embedded by the application and passed to Load as bytes;
 // the library itself is application-agnostic.
@@ -9,6 +9,27 @@ package projectspec
 // Spec is the root of a project.yaml file.
 type Spec struct {
 	Updaters []UpdaterSpec `yaml:"updaters"`
+	// Config is the flattened, document-ordered list of settings declared in
+	// the "config" section. It is populated by walking the YAML node tree,
+	// not by unmarshalling, so entry order is preserved for the UI.
+	Config []ConfigEntry `yaml:"-"`
+}
+
+// ConfigEntry is one flattened leaf of the "config" section: a single
+// setting addressed by its path from the section root, with a declared type
+// and optional UI control hints.
+type ConfigEntry struct {
+	Path    []string // e.g. ["core", "log", "level"]
+	Type    string   // "bool" | "int" | "string"
+	Default any      // decoded as bool/int/string per Type
+	// Disabled marks the entry as not user-editable.
+	Disabled bool
+	Control  string // "" | "text" | "number" | "switch" | "select"
+	// Options holds the allowed values for the "select" control, decoded per
+	// Type.
+	Options []any
+	// Min and Max bound int entries; nil when absent.
+	Min, Max *int
 }
 
 // UpdaterSpec declares one update manager: where releases come from and how
