@@ -11,7 +11,7 @@ import (
 // single setting) rather than a section holding sub-entries.
 var configAttrKeys = map[string]bool{
 	"type": true, "default": true, "control": true, "options": true,
-	"min": true, "max": true, "disabled": true,
+	"min": true, "max": true, "disabled": true, "platforms": true,
 }
 
 var knownConfigTypes = map[string]bool{"bool": true, "int": true, "string": true}
@@ -19,6 +19,10 @@ var knownConfigTypes = map[string]bool{"bool": true, "int": true, "string": true
 var knownConfigControls = map[string]bool{
 	"": true, "text": true, "number": true, "switch": true, "select": true,
 }
+
+// knownConfigPlatforms are the GOOS values accepted in an entry's "platforms"
+// list: the desktop targets the app may run on.
+var knownConfigPlatforms = map[string]bool{"linux": true, "windows": true, "darwin": true}
 
 // loadConfig flattens the document's "config" section into document-ordered
 // entries. The section is walked as a yaml.Node tree (not unmarshalled into a
@@ -89,7 +93,7 @@ func (v *validator) walkConfig(node *yaml.Node, prefix []string, seen map[string
 // parseConfigEntry decodes and validates one leaf mapping into a ConfigEntry.
 func (v *validator) parseConfigEntry(path string, segs []string, node *yaml.Node) ConfigEntry {
 	e := ConfigEntry{Path: segs}
-	var typeNode, defNode, controlNode, optionsNode, minNode, maxNode, disabledNode *yaml.Node
+	var typeNode, defNode, controlNode, optionsNode, minNode, maxNode, disabledNode, platformsNode *yaml.Node
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		switch node.Content[i].Value {
 		case "type":
@@ -106,6 +110,8 @@ func (v *validator) parseConfigEntry(path string, segs []string, node *yaml.Node
 			maxNode = node.Content[i+1]
 		case "disabled":
 			disabledNode = node.Content[i+1]
+		case "platforms":
+			platformsNode = node.Content[i+1]
 		}
 	}
 
@@ -187,6 +193,25 @@ func (v *validator) parseConfigEntry(path string, segs []string, node *yaml.Node
 			v.problemf("config.%s.disabled: must be a bool", path)
 		} else if err := disabledNode.Decode(&e.Disabled); err != nil {
 			v.problemf("config.%s.disabled: must be a bool", path)
+		}
+	}
+
+	if platformsNode != nil {
+		if platformsNode.Kind != yaml.SequenceNode {
+			v.problemf("config.%s.platforms: must be a list", path)
+		} else {
+			for i, el := range platformsNode.Content {
+				if el.Kind != yaml.ScalarNode || el.Tag != "!!str" {
+					v.problemf("config.%s.platforms[%d]: must be a string", path, i)
+					continue
+				}
+				p := el.Value
+				if !knownConfigPlatforms[p] {
+					v.problemf("config.%s.platforms[%d]: unknown %q (known: %s)", path, i, p, keys(knownConfigPlatforms))
+					continue
+				}
+				e.Platforms = append(e.Platforms, p)
+			}
 		}
 	}
 	return e

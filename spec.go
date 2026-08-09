@@ -25,6 +25,9 @@ type ConfigEntry struct {
 	// Disabled marks the entry as not user-editable.
 	Disabled bool
 	Control  string // "" | "text" | "number" | "switch" | "select"
+	// Platforms restricts the entry to the listed GOOS values ("linux",
+	// "windows", "darwin"); empty means the entry applies to all platforms.
+	Platforms []string
 	// Options holds the allowed values for the "select" control, decoded per
 	// Type.
 	Options []any

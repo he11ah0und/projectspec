@@ -107,6 +107,39 @@ func TestConfigPlaceholdersLiteral(t *testing.T) {
 	}
 }
 
+func TestConfigPlatforms(t *testing.T) {
+	doc := `
+config:
+  privileges:
+    run_as_admin: {type: bool, default: false, control: switch, platforms: [windows, darwin]}
+  core:
+    url_test_url: {type: string, default: "http://cp.cloudflare.com/generate_204", control: text}
+`
+	spec, err := loadConfigDoc(doc)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(spec.Config) != 2 {
+		t.Fatalf("want 2 entries, got %d", len(spec.Config))
+	}
+	admin := spec.Config[0]
+	if got := strings.Join(admin.Path, "."); got != "privileges.run_as_admin" {
+		t.Errorf("entry 0: want path privileges.run_as_admin, got %s", got)
+	}
+	want := []string{"windows", "darwin"}
+	if len(admin.Platforms) != len(want) {
+		t.Fatalf("run_as_admin platforms: want %v, got %v", want, admin.Platforms)
+	}
+	for i, p := range want {
+		if admin.Platforms[i] != p {
+			t.Errorf("run_as_admin platforms[%d]: want %q, got %q", i, p, admin.Platforms[i])
+		}
+	}
+	if spec.Config[1].Platforms != nil {
+		t.Errorf("url_test_url: absent platforms must stay nil, got %v", spec.Config[1].Platforms)
+	}
+}
+
 func TestConfigValidation(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -151,6 +184,12 @@ func TestConfigValidation(t *testing.T) {
 			[]string{"config.x: cannot be both an entry and a section"}},
 		{"disabled not bool", `config: {x: {type: bool, default: false, disabled: 1}}`,
 			[]string{"config.x.disabled: must be a bool"}},
+		{"unknown platform", `config: {x: {type: bool, default: false, platforms: [freebsd]}}`,
+			[]string{`config.x.platforms[0]: unknown "freebsd"`}},
+		{"platform not a string", `config: {x: {type: bool, default: false, platforms: [1]}}`,
+			[]string{"config.x.platforms[0]: must be a string"}},
+		{"platforms not a list", `config: {x: {type: bool, default: false, platforms: linux}}`,
+			[]string{"config.x.platforms: must be a list"}},
 		{"min not int", `config: {x: {type: int, default: 5, min: "10"}}`,
 			[]string{"config.x.min: must be an int"}},
 		{"scalar value", `config: {x: 5}`,
