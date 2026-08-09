@@ -12,12 +12,14 @@ import (
 var configAttrKeys = map[string]bool{
 	"type": true, "default": true, "control": true, "options": true,
 	"min": true, "max": true, "disabled": true, "platforms": true,
+	"action": true, "confirm": true,
 }
 
 var knownConfigTypes = map[string]bool{"bool": true, "int": true, "string": true}
 
 var knownConfigControls = map[string]bool{
 	"": true, "text": true, "number": true, "switch": true, "select": true,
+	"action": true,
 }
 
 // knownConfigPlatforms are the GOOS values accepted in an entry's "platforms"
@@ -93,7 +95,7 @@ func (v *validator) walkConfig(node *yaml.Node, prefix []string, seen map[string
 // parseConfigEntry decodes and validates one leaf mapping into a ConfigEntry.
 func (v *validator) parseConfigEntry(path string, segs []string, node *yaml.Node) ConfigEntry {
 	e := ConfigEntry{Path: segs}
-	var typeNode, defNode, controlNode, optionsNode, minNode, maxNode, disabledNode, platformsNode *yaml.Node
+	var typeNode, defNode, controlNode, optionsNode, minNode, maxNode, disabledNode, platformsNode, actionNode, confirmNode *yaml.Node
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		switch node.Content[i].Value {
 		case "type":
@@ -112,7 +114,52 @@ func (v *validator) parseConfigEntry(path string, segs []string, node *yaml.Node
 			disabledNode = node.Content[i+1]
 		case "platforms":
 			platformsNode = node.Content[i+1]
+		case "action":
+			actionNode = node.Content[i+1]
+		case "confirm":
+			confirmNode = node.Content[i+1]
 		}
+	}
+
+	// Control is decoded first: "action" entries carry no value, so they
+	// must not declare type/default and instead require an action id.
+	validControl := false
+	if controlNode != nil {
+		if controlNode.Kind != yaml.ScalarNode {
+			v.problemf("config.%s.control: must be a string", path)
+		} else {
+			e.Control = controlNode.Value
+			if !knownConfigControls[e.Control] {
+				v.problemf("config.%s.control: unknown %q (known: %s)", path, e.Control, keys(knownConfigControls))
+			} else {
+				validControl = true
+			}
+		}
+	}
+
+	if e.Control == "action" && validControl {
+		if typeNode != nil {
+			v.problemf("config.%s.type: not allowed with control action", path)
+		}
+		if defNode != nil {
+			v.problemf("config.%s.default: not allowed with control action", path)
+		}
+		if actionNode == nil {
+			v.problemf("config.%s.action: required with control action", path)
+		} else if actionNode.Kind != yaml.ScalarNode || actionNode.Value == "" {
+			v.problemf("config.%s.action: must be a non-empty string", path)
+		} else {
+			e.Action = actionNode.Value
+		}
+		e.Confirm = v.decodeBool(fmt.Sprintf("config.%s.confirm", path), confirmNode)
+		e.Platforms = v.decodePlatforms(path, platformsNode)
+		return e
+	}
+	if actionNode != nil {
+		v.problemf("config.%s.action: only valid with control action", path)
+	}
+	if confirmNode != nil {
+		v.problemf("config.%s.confirm: only valid with control action", path)
 	}
 
 	validType := false
@@ -135,28 +182,19 @@ func (v *validator) parseConfigEntry(path string, segs []string, node *yaml.Node
 		e.Default = v.decodeTyped(fmt.Sprintf("config.%s.default", path), defNode, e.Type)
 	}
 
-	if controlNode != nil {
-		if controlNode.Kind != yaml.ScalarNode {
-			v.problemf("config.%s.control: must be a string", path)
-		} else {
-			e.Control = controlNode.Value
-			if !knownConfigControls[e.Control] {
-				v.problemf("config.%s.control: unknown %q (known: %s)", path, e.Control, keys(knownConfigControls))
-			} else if validType {
-				switch e.Control {
-				case "number":
-					if e.Type != "int" {
-						v.problemf("config.%s.control: %q only valid for type int", path, e.Control)
-					}
-				case "switch":
-					if e.Type != "bool" {
-						v.problemf("config.%s.control: %q only valid for type bool", path, e.Control)
-					}
-				case "text":
-					if e.Type != "string" {
-						v.problemf("config.%s.control: %q only valid for type string", path, e.Control)
-					}
-				}
+	if validControl && validType {
+		switch e.Control {
+		case "number":
+			if e.Type != "int" {
+				v.problemf("config.%s.control: %q only valid for type int", path, e.Control)
+			}
+		case "switch":
+			if e.Type != "bool" {
+				v.problemf("config.%s.control: %q only valid for type bool", path, e.Control)
+			}
+		case "text":
+			if e.Type != "string" {
+				v.problemf("config.%s.control: %q only valid for type string", path, e.Control)
 			}
 		}
 	}
@@ -188,33 +226,51 @@ func (v *validator) parseConfigEntry(path string, segs []string, node *yaml.Node
 		}
 	}
 
-	if disabledNode != nil {
-		if disabledNode.Kind != yaml.ScalarNode || disabledNode.Tag != "!!bool" {
-			v.problemf("config.%s.disabled: must be a bool", path)
-		} else if err := disabledNode.Decode(&e.Disabled); err != nil {
-			v.problemf("config.%s.disabled: must be a bool", path)
-		}
-	}
-
-	if platformsNode != nil {
-		if platformsNode.Kind != yaml.SequenceNode {
-			v.problemf("config.%s.platforms: must be a list", path)
-		} else {
-			for i, el := range platformsNode.Content {
-				if el.Kind != yaml.ScalarNode || el.Tag != "!!str" {
-					v.problemf("config.%s.platforms[%d]: must be a string", path, i)
-					continue
-				}
-				p := el.Value
-				if !knownConfigPlatforms[p] {
-					v.problemf("config.%s.platforms[%d]: unknown %q (known: %s)", path, i, p, keys(knownConfigPlatforms))
-					continue
-				}
-				e.Platforms = append(e.Platforms, p)
-			}
-		}
-	}
+	e.Disabled = v.decodeBool(fmt.Sprintf("config.%s.disabled", path), disabledNode)
+	e.Platforms = v.decodePlatforms(path, platformsNode)
 	return e
+}
+
+// decodeBool decodes an optional bool attribute node; nil node yields false.
+func (v *validator) decodeBool(path string, n *yaml.Node) bool {
+	if n == nil {
+		return false
+	}
+	var b bool
+	if n.Kind != yaml.ScalarNode || n.Tag != "!!bool" {
+		v.problemf("%s: must be a bool", path)
+		return false
+	}
+	if err := n.Decode(&b); err != nil {
+		v.problemf("%s: must be a bool", path)
+		return false
+	}
+	return b
+}
+
+// decodePlatforms decodes an optional platforms list; nil node yields nil.
+func (v *validator) decodePlatforms(path string, n *yaml.Node) []string {
+	if n == nil {
+		return nil
+	}
+	if n.Kind != yaml.SequenceNode {
+		v.problemf("config.%s.platforms: must be a list", path)
+		return nil
+	}
+	var platforms []string
+	for i, el := range n.Content {
+		if el.Kind != yaml.ScalarNode || el.Tag != "!!str" {
+			v.problemf("config.%s.platforms[%d]: must be a string", path, i)
+			continue
+		}
+		p := el.Value
+		if !knownConfigPlatforms[p] {
+			v.problemf("config.%s.platforms[%d]: unknown %q (known: %s)", path, i, p, keys(knownConfigPlatforms))
+			continue
+		}
+		platforms = append(platforms, p)
+	}
+	return platforms
 }
 
 // decodeTyped decodes a scalar node as the entry type, reporting a problem

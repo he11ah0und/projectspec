@@ -24,7 +24,12 @@ type ConfigEntry struct {
 	Default any      // decoded as bool/int/string per Type
 	// Disabled marks the entry as not user-editable.
 	Disabled bool
-	Control  string // "" | "text" | "number" | "switch" | "select"
+	Control  string // "" | "text" | "number" | "switch" | "select" | "action"
+	// Action is the backend action id for "action" control entries; such
+	// entries carry no value (no type/default) and only trigger the action.
+	Action string
+	// Confirm asks the UI to confirm before running an "action" entry.
+	Confirm bool
 	// Platforms restricts the entry to the listed GOOS values ("linux",
 	// "windows", "darwin"); empty means the entry applies to all platforms.
 	Platforms []string

@@ -211,6 +211,78 @@ func TestConfigValidation(t *testing.T) {
 	}
 }
 
+func TestConfigAction(t *testing.T) {
+	doc := `
+config:
+  privileges:
+    setcap: {control: action, action: setcap, confirm: true, platforms: [linux]}
+    restart_admin:
+      control: action
+      action: restart_admin
+`
+	spec, err := loadConfigDoc(doc)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(spec.Config) != 2 {
+		t.Fatalf("want 2 entries, got %d", len(spec.Config))
+	}
+	setcap := spec.Config[0]
+	if got := strings.Join(setcap.Path, "."); got != "privileges.setcap" {
+		t.Errorf("entry 0: want path privileges.setcap, got %s", got)
+	}
+	if setcap.Control != "action" || setcap.Action != "setcap" || !setcap.Confirm {
+		t.Errorf("setcap: %+v", setcap)
+	}
+	if setcap.Type != "" || setcap.Default != nil {
+		t.Errorf("setcap: action entries must carry no type/default, got %q/%v", setcap.Type, setcap.Default)
+	}
+	if len(setcap.Platforms) != 1 || setcap.Platforms[0] != "linux" {
+		t.Errorf("setcap platforms: got %v", setcap.Platforms)
+	}
+	restart := spec.Config[1]
+	if restart.Action != "restart_admin" || restart.Confirm || restart.Platforms != nil {
+		t.Errorf("restart_admin: %+v", restart)
+	}
+}
+
+func TestConfigActionValidation(t *testing.T) {
+	cases := []struct {
+		name   string
+		config string
+		wants  []string
+	}{
+		{"missing action id", `config: {x: {control: action}}`,
+			[]string{"config.x.action: required with control action"}},
+		{"empty action id", `config: {x: {control: action, action: ""}}`,
+			[]string{"config.x.action: must be a non-empty string"}},
+		{"type present", `config: {x: {control: action, action: a, type: bool}}`,
+			[]string{"config.x.type: not allowed with control action"}},
+		{"default present", `config: {x: {control: action, action: a, default: true}}`,
+			[]string{"config.x.default: not allowed with control action"}},
+		{"confirm not bool", `config: {x: {control: action, action: a, confirm: 1}}`,
+			[]string{"config.x.confirm: must be a bool"}},
+		{"action without action control", `config: {x: {type: bool, default: true, action: a}}`,
+			[]string{"config.x.action: only valid with control action"}},
+		{"confirm without action control", `config: {x: {type: bool, default: true, confirm: true}}`,
+			[]string{"config.x.confirm: only valid with control action"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := loadConfigDoc("\n" + tc.config + "\n")
+			if err == nil {
+				t.Fatalf("want error")
+			}
+			msg := err.Error()
+			for _, want := range tc.wants {
+				if !strings.Contains(msg, want) {
+					t.Errorf("error missing %q:\n%s", want, msg)
+				}
+			}
+		})
+	}
+}
+
 func TestConfigReportsAllProblems(t *testing.T) {
 	doc := `
 config:

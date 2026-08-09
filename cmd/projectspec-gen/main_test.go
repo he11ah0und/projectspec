@@ -23,6 +23,8 @@ config:
     limit: {type: int, default: 100, control: number, min: 10}
   plugins:
     enabled: {type: bool, default: false, disabled: true}
+  privileges:
+    setcap: {control: action, action: setcap, confirm: true, platforms: [linux]}
 `
 
 func TestRunGeneratesAccessor(t *testing.T) {
@@ -77,6 +79,12 @@ func TestRunGeneratesAccessor(t *testing.T) {
 	}
 	if string(formatted) != src {
 		t.Errorf("generated source is not gofmt-stable")
+	}
+	// Action entries carry no Sheet cell, so they must not appear.
+	for _, unwanted := range []string{"Privileges", "Setcap", `MustGet("privileges"`} {
+		if strings.Contains(src, unwanted) {
+			t.Errorf("generated source contains action entry artifact %q:\n%s", unwanted, src)
+		}
 	}
 }
 
