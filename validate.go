@@ -32,6 +32,7 @@ var knownSourceBackends = map[string]bool{"github": true}
 var knownApplyBackends = map[string]bool{"self": true, "files": true}
 
 func (v *validator) validate(spec *Spec) {
+	spec.Net.UserAgent = v.resolve("net.user_agent", spec.Net.UserAgent)
 	if len(spec.Updaters) == 0 {
 		v.problemf("updaters: at least one updater is required")
 		return

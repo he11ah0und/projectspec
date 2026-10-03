@@ -55,6 +55,33 @@ func TestLoadDefaultsGOOSGOARCH(t *testing.T) {
 	}
 }
 
+func TestLoadNetUserAgent(t *testing.T) {
+	doc := validDoc + `
+net:
+  user_agent: my-app/$VERSION/$GOOS
+`
+	vars := testVars()
+	vars["VERSION"] = "1.2.3"
+	spec, err := Load([]byte(doc), vars)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if want := "my-app/1.2.3/linux"; spec.Net.UserAgent != want {
+		t.Errorf("net.user_agent: want %q, got %q", want, spec.Net.UserAgent)
+	}
+}
+
+func TestLoadNetUserAgentUnknownPlaceholder(t *testing.T) {
+	doc := validDoc + `
+net:
+  user_agent: my-app/$NOPE
+`
+	_, err := Load([]byte(doc), testVars())
+	if err == nil || !strings.Contains(err.Error(), `unknown placeholder "$NOPE"`) {
+		t.Fatalf("want unknown placeholder error, got %v", err)
+	}
+}
+
 func TestLoadReportsAllProblems(t *testing.T) {
 	doc := `
 updaters:

@@ -9,10 +9,21 @@ package projectspec
 // Spec is the root of a project.yaml file.
 type Spec struct {
 	Updaters []UpdaterSpec `yaml:"updaters"`
+	// Net declares app-level network identity (e.g. the User-Agent for
+	// outgoing HTTP requests). Optional.
+	Net NetSpec `yaml:"net"`
 	// Config is the flattened, document-ordered list of settings declared in
 	// the "config" section. It is populated by walking the YAML node tree,
 	// not by unmarshalling, so entry order is preserved for the UI.
 	Config []ConfigEntry `yaml:"-"`
+}
+
+// NetSpec declares app-level network identity.
+type NetSpec struct {
+	// UserAgent is the User-Agent header the app sends on its outgoing HTTP
+	// requests. May contain "$TOKEN" placeholders (e.g. "$GOOS", "$VERSION").
+	// Empty means "leave the HTTP client default".
+	UserAgent string `yaml:"user_agent"`
 }
 
 // ConfigEntry is one flattened leaf of the "config" section: a single
