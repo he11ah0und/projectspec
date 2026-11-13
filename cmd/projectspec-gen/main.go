@@ -39,9 +39,9 @@ func run(specPath, outPath, pkg string) error {
 	if err != nil {
 		return fmt.Errorf("read spec: %w", err)
 	}
-	// The config section uses no placeholders; BASE_DIR/DATA_DIR stand in so
-	// an updaters section with tokens still validates.
-	spec, err := projectspec.Load(data, projectspec.Vars{"BASE_DIR": "x", "DATA_DIR": "x"})
+	// The config section uses no generated values; placeholders required by
+	// other sections stand in so the complete spec still validates.
+	spec, err := projectspec.Load(data, projectspec.Vars{"BASE_DIR": "x", "DATA_DIR": "x", "VERSION": "dev"})
 	if err != nil {
 		return err
 	}

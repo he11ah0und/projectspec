@@ -9,6 +9,8 @@ import (
 )
 
 const genSpecDoc = `
+net:
+  user_agent: sing-box-ez/$VERSION/$GOOS
 updaters:
   - name: updater
     source: {backend: github, owner: a, repo: b}
